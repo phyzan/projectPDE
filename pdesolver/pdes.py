@@ -247,19 +247,3 @@ def animate_2d(x: np.ndarray, y:np.ndarray, f:np.ndarray, duration: float, fps: 
         raise ValueError('2d or 3d are the only accepted parameters for "axes"')  
 
     return _process_animation(frames=f, update=update, fig=fig, time=duration, fps=fps, dpi=dpi, save=save)
-
-'''
-TODO:
-
-2) Add polar and spherical coordinates
-4) solve coupled pde's, and pde's coupled with ode's
-6) add schrodinger
-7) automate dt
-8) ad file for animations, so that the solution is saved on txt file and not in ram
-9) class TimeDependentField: has the field for each time frame saved in a txt file (all frames together)
-    .animate, .plot(t)
-10) generalized Diffusion equation with VectorOperator
-
-check reserved_nodes, nodes, corners, filter_matrix etc in Grid boundary, bounds. Problem with the boundary value problem in bcs matrix
-also bvp matrix and array, should be more general in time dependent pde and non time dependent pde problems
-'''
