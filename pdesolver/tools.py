@@ -1,7 +1,7 @@
 from typing import Callable
 import numpy as np
 import scipy.sparse as sp
-import os
+import os, sys
 
 
 def prod(args):
@@ -54,8 +54,8 @@ def _output_progress(i, steps):
         _print = False
     
     if _print:
-        os.system('cls')
-        print('Computing:', round(100*i/steps, 2), '%')
+        sys.stdout.flush()
+        sys.stdout.write('\rComputing: {} %'.format(round(100*i/steps, 2), end=""))
 
 def multi_kronecker_product(*matrices):
     """

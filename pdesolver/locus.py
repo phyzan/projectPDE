@@ -36,7 +36,7 @@ class Locus:
 
     def normaldiff_matrix(self, grid: grids.Grid, order: int, fd: int, acc: int)->sp.csr_matrix:
         '''
-        SingleGridBBoundary is the only class that implements its own function because it is faster
+        GridBBoundary is the only class that implements its own function because it is faster
         '''
         m = grid.empty_matrix()
         for u in self.param_values(grid):
@@ -56,7 +56,7 @@ class Locus:
         m = grid.empty_matrix()
         for i in range(3):
             if coefs[i] != 0:
-                if i == 0:# no need, but it's faster
+                if i == 0:# no need for this if statement, but it's faster
                     m += coefs[i] * self.identity_matrix(grid)
                 else:
                     fd = 1 if i == 1 else -1
@@ -173,13 +173,13 @@ class Line(Locus):
 
 
 class Surface(Locus):
-
+    #TODO
     dof = 2
 
     pass
 
 
-class SingleGridBoundary(Locus):
+class GridBoundary(Locus):
 
     _bound = {0: 'lower', 1: 'upper'}
 

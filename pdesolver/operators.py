@@ -87,7 +87,7 @@ class Operator:
 
         return Operator(sub, self._coupled_signature(other, '-'))
 
-    def __mul__(self, other: Operator|float|VectorOperator):
+    def __mul__(self, other: Operator|float|VectorOperator)->Operator:
         if type(other) is  VectorOperator:
             return VectorOperator.__rmul__(other, self)
         other = asoperator(other)

@@ -159,7 +159,7 @@ class Grid:
         '''
         Arguments
         -----------
-        shape (tuple): The number of points in its axis in reverse order (e.g (nz, ny, nx))
+        shape (tuple): The number of points in its axis (e.g (nx, ny, nz))
         limits (tuple): The limits of each axis (in usual order: (xlims, ylims)). e.g. ((0, 10), (0, 20))
         '''
         nd = len(shape)

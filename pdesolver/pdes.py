@@ -16,15 +16,16 @@ from matplotlib import cm
 
 
 class PDE:
+
     '''
     Base class which all Linear Partial Differential Equations inherit from.
     '''
-    def __init__(self, grid: grids.Grid, operator: operators.Operator, bcs: bounds.BoundaryConditions, source: Callable[..., float|np.ndarray] = None):
+    def __init__(self, grid: grids.Grid, operator: operators.Operator, bcs: bounds.BoundaryConditions|bounds.AxisBcs, source: Callable[..., float|np.ndarray] = None):
         self.grid = grid
         self.operator = operator
         self.xmesh = self.grid.x_mesh()
-        self.bcs = bcs
-        self.bcs_filter = bcs.filter_matrix(self.grid)
+        self.bcs = bcs if type(bcs) is bounds.BoundaryConditions else bcs.set()
+        self.bcs_filter = self.bcs.filter_matrix(self.grid)
 
         if source is None:
             source_arr = np.zeros(self.grid.n_tot)
@@ -33,33 +34,43 @@ class PDE:
             self.sourcefunc = s
         elif tools._is_timedependent(source):
             def s(t):
-                return self.clear_bcs_entries(source(*self.xmesh, t).flatten(order='F'))
+                return source(*self.xmesh, t).flatten(order='F')
             self.sourcefunc = s
         else:
-            source_arr = self.clear_bcs_entries(source(*self.xmesh).flatten(order='F'))
+            source_arr = source(*self.xmesh).flatten(order='F')
             def s(t):
                 return source_arr
             self.sourcefunc = s
         
-    def source_arr(self, t):
-        return self.sourcefunc(t)
+    def source_arr(self, t: float = None):
+        if t is not None:
+            return self.sourcefunc(t)
+        else:
+            return self.sourcefunc(0)
 
     def clear_bcs_entries(self, a: sp.csr_matrix|np.ndarray):
         return self.bcs_filter.dot(a)
+    
+    def with_bcs_arr(self, arr: np.ndarray, t: float = None):
+        return self.clear_bcs_entries(arr) + self.bcs.array(self.grid, t)
+    
+    def with_bcs_matrix(self, m: sp.csr_matrix, acc: int = 1):
+        return self.clear_bcs_entries(m) + self.bcs.matrix(self.grid, acc)
 
 
 class BoundaryValueProblem(PDE):
     def __init__(self, grid: grids.Grid, operator: operators.Operator, bcs: bounds.BoundaryConditions, source: Callable[..., float|np.ndarray] = None):
 
+        if source is not None:
+            assert not tools._is_timedependent(source)
         super().__init__(grid, operator, bcs, source)
 
     def bvp_array(self):
-        return -self.clear_bcs_entries(self.source_arr(0)) + self.bcs.array(self.grid)
+        return self.with_bcs_arr(-self.source_arr())
 
     def bvp_matrix(self, acc: int = 1)->sp.csr_matrix:
-        
         oper = self.operator.matrix(grid=self.grid, acc=acc)
-        return self.clear_bcs_entries(oper) + self.bcs.matrix(self.grid, acc)
+        return self.with_bcs_matrix(oper, acc=acc)
     
     def solve(self, acc: int = 1):
         field = spl.spsolve(self.bvp_matrix(acc=acc), self.bvp_array()).reshape(self.grid.shape, order='F')
@@ -72,22 +83,22 @@ class TimeDependentProblem(PDE):
         self.order = order
         super().__init__(grid, operator, bcs, source)
 
-    def _initial_steps(self, ics: tuple[Callable[..., float|np.ndarray]], dt: float)->np.ndarray[np.ndarray]:
+    def _initial_steps(self, ics: tuple[Callable[..., float|np.ndarray]], dt: float)->list[np.ndarray]:
         '''
         ics (tuple): (f(x, y, z), df/dt(x, y, z)...)
         '''
         if len(ics) != self.order:
             raise ValueError('Initial conditions must be as many as the order of the time derivative in the pde')
         
-        ics_op = bounds.ics_operator(self.order, dt)
+        ics_op = bounds.ivp_operator(self.order, dt)
         ics_matrix = np.zeros((self.order, tools.prod(self.grid.shape)))
         for i in range(self.order):
             ics_matrix[i] = ics[i](*self.xmesh).flatten(order='F')
         
         f = ics_op.dot(ics_matrix)
-        bvp_matrix = self.clear_bcs_entries(operators.I.matrix(self.grid)) + self.bcs.matrix(self.grid)
+        bvp_matrix = self.with_bcs_matrix(operators.I.matrix(self.grid))
         for i in range(self.order):
-            bvp_array = self.clear_bcs_entries(f[i]) + self.bcs.array(self.grid, t=i*dt)
+            bvp_array = self.with_bcs_arr(f[i], t=i*dt)
             f[i] = spl.spsolve(bvp_matrix, bvp_array)
 
         return f
@@ -100,7 +111,7 @@ class TimeDependentProblem(PDE):
         frame_arr = np.zeros((frames, tools.prod(self.grid.shape)))
         k = 0
         for i in range(self.order, nt):
-            rhs = sum([B[j].dot(f[j]) for j in range(self.order)]) + dt**self.order*self.source_arr(i*dt) + self.bcs.array(self.grid, i*dt)
+            rhs = sum([B[j].dot(f[j]) for j in range(self.order)]) + self.with_bcs_arr(dt**self.order*self.source_arr(i*dt), t=i*dt)
             for j in range(self.order-1):
                 f[j] = f[j+1]
             f[self.order-1] = spl.spsolve(A, rhs)
@@ -131,13 +142,14 @@ class TimeDependentProblem(PDE):
             raise ValueError('Cannot animate in higher than 2 dimensions')
         return ani
 
+
 class FirstOrderTDP(TimeDependentProblem):
     def __init__(self, grid: grids.Grid, operator: operators.Operator, bcs: bounds.BoundaryConditions, source: Callable[..., float|np.ndarray] = None):
         super().__init__(grid, operator, bcs, 1, source)
 
     def lhs_matrix(self, dt: float, acc: int = 1):
         oper = (1 - dt/2*self.operator).matrix(grid=self.grid, acc=acc)
-        return self.clear_bcs_entries(oper) + self.bcs.matrix(self.grid)
+        return self.with_bcs_matrix(oper, acc)
     
     def rhs_matrix(self, dt: float, acc: int = 1):
         oper = (1 + dt/2*self.operator).matrix(grid=self.grid, acc=acc)
@@ -146,12 +158,13 @@ class FirstOrderTDP(TimeDependentProblem):
     def solve(self, f0: Callable[..., np.ndarray], t: float, dt: float, acc: int = 1):
         return self._solve(ics=(f0,), t=t, dt=dt, acc=acc, frames=0)[0]
     
+
 class SecondOrderTDP(TimeDependentProblem):
     def __init__(self, grid: grids.Grid, operator: operators.Operator, bcs: bounds.BoundaryConditions, source: Callable[..., float|np.ndarray] = None):
         super().__init__(grid, operator, bcs, 2, source)
 
     def lhs_matrix(self, dt: float, acc: int = 1):
-        return self.clear_bcs_entries(operators.I.matrix(self.grid)) + self.bcs.matrix(self.grid)
+        return self.with_bcs_matrix(operators.I.matrix(self.grid))
     
     def rhs_matrix(self, dt: float, acc: int = 1):
         rhs1 = -self.clear_bcs_entries(operators.I.matrix(self.grid))
